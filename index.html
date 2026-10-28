@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NDTechnologies | NDT Inspection & Asset Integrity Platform</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Chart.js for Historical Corrosion Analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- FIREBASE INTEGRATION MODULES -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'ndtechnologies-companycam-ops';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+      apiKey: "demo-api-key",
+      authDomain: "demo-app.firebaseapp.com",
+      projectId: "demo-app",
+      storageBucket: "demo-app.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    window.db = db;
+    window.auth = auth;
+    window.appId = appId;
+    window.firestoreCollections = {
+      inspections: collection(db, 'artifacts', appId, 'public', 'data', 'inspections'),
+      repairs: collection(db, 'artifacts', appId, 'public', 'data', 'repairs'),
+      equipment: collection(db, 'artifacts', appId, 'public', 'data', 'equipment'),
+      itp: collection(db, 'artifacts', appId, 'public', 'data', 'itp'),
+      rbi: collection(db, 'artifacts', appId, 'public', 'data', 'rbi'),
+      camFeed: collection(db, 'artifacts', appId, 'public', 'data', 'camFeed'),
+      projects: collection(db, 'artifacts', appId, 'public', 'data', 'projects')
+    };
+
+    async function initFirebase() {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.warn("Firebase fallback to local memory mode:", err);
+      }
+    }
+    window.addEventListener('DOMContentLoaded', initFirebase);
+  </script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              400: '#38bdf8',
+              500: '#0284c7',
+              600: '#0284c7',
+              700: '#0369a1',
+              900: '#0c4a6e',
+            },
+            camDark: {
+              800: '#1e293b',
+              900: '#0f172a',
+              950: '#090d16'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+    .companycam-card {
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .companycam-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px -10px rgba(2, 132, 199, 0.25);
+    }
+
+    .hardstop-pulse {
+      animation: pulse-red 1.5s infinite;
+    }
+    @keyframes pulse-red {
+      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8); }
+      70% { box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    /* Print styles for generated reports */
+    @media print {
+      body * { visibility: hidden; }
+      #printableReportArea, #printableReportArea * { visibility: visible; }
+      #printableReportArea { position: absolute; left: 0; top: 0; width: 100%; background: white !important; color: black !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans bg-slate-950 text-slate-100 antialiased selection:bg-sky-500 selection:text-white pb-20 md:pb-0">
+
+  <!-- HARD STOP SAFETY TRIGGER BANNER -->
+  <div id="globalHardStopBanner" class="hidden bg-red-600 text-white px-4 py-3 border-b-2 border-red-400 hardstop-pulse relative z-50">
+    <div class="max-w-7xl mx-auto flex items-center justify-between flex-wrap gap-2">
+      <div class="flex items-center gap-3">
+        <i class="fa-solid fa-triangle-exclamation text-2xl animate-bounce"></i>
+        <div>
+          <p class="font-black tracking-wider uppercase text-xs sm:text-sm">NDTechnologies HARD STOP ALERT — IMMEDIATE SHUTDOWN</p>
+          <p class="text-xs text-red-100" id="hardStopBannerMsg">Asset PIPE-S-204 thickness below safe limit (0.185" < 0.220" min). Operation halted.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="switchTab('rbi')" class="bg-slate-950 hover:bg-black text-red-200 text-xs px-3 py-1.5 rounded-lg font-mono font-bold border border-red-400">View Risk Score</button>
+        <button onclick="dismissBanner()" class="text-white/80 hover:text-white text-lg px-2"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPANYCAM HEADER BAR -->
+  <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+      
+      <!-- Brand & CompanyCam Badge -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-sky-500/25 ring-2 ring-sky-400/30">
+          <i class="fa-solid fa-camera text-white text-lg"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-black text-white tracking-tight text-base sm:text-lg">NDTechnologies</span>
+            <span class="text-[10px] font-mono font-bold text-sky-400 px-2 py-0.5 rounded-full bg-sky-950 border border-sky-800 uppercase tracking-wider">Field Cam Ops</span>
+          </div>
+          <p class="text-[11px] text-slate-400 hidden sm:block">CompanyCam Visual Stream, API/ASME Reports & NDT Intelligence</p>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons & Role Swapper -->
+      <div class="flex items-center gap-2 text-xs">
+        <button onclick="openModal('quickCameraModal')" class="bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-400 hover:to-cyan-400 text-white font-bold px-3.5 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-sky-500/20 text-xs transition">
+          <i class="fa-solid fa-camera"></i>
+          <span class="hidden sm:inline">Snap Photo</span>
+        </button>
+
+        <select id="userRoleSelect" onchange="changeUserRole(this.value)" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl px-2.5 py-2 focus:border-sky-500 focus:outline-none">
+          <option value="TECH">Role: Field Tech (Level II)</option>
+          <option value="QA_MGR">Role: QA Manager (Level III)</option>
+          <option value="CLIENT">Role: Operations / Client</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN APP LAYOUT CONTAINER -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- DESKTOP NAVIGATION SIDEBAR -->
+    <aside class="w-16 md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 hidden sm:flex">
+      <div class="p-3 space-y-5">
+        
+        <!-- VISUAL FEED & REPORTS SECTION -->
+        <div>
+          <p class="px-3 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold mb-2">Field Feed & Reports</p>
+          <nav class="space-y-1">
+            <button onclick="switchTab('field-feed')" id="nav-field-feed" class="nav-btn active w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-images text-sky-400 w-4 text-center"></i>
+              <span>CompanyCam Field Feed</span>
+            </button>
+
+            <button onclick="switchTab('projects')" id="nav-projects" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-folder-open text-amber-400 w-4 text-center"></i>
+              <span>Projects & Site Galleries</span>
+            </button>
+
+            <button onclick="switchTab('feeder-form')" id="nav-feeder-form" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-file-signature text-emerald-400 w-4 text-center"></i>
+              <span>API/ASME Field Feeder</span>
+            </button>
+
+            <button onclick="switchTab('report-preview')" id="nav-report-preview" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-file-pdf text-purple-400 w-4 text-center"></i>
+              <span>Printable Report Deliverable</span>
+            </button>
+          </nav>
+        </div>
+
+        <!-- DATABASE TABLES & SAFEGUARDS SECTION -->
+        <div>
+          <p class="px-3 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-bold mb-2">NDT Database Tables</p>
+          <nav class="space-y-1">
+            <button onclick="switchTab('inspections')" id="nav-inspections" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-microscope text-blue-400 w-4 text-center"></i>
+              <span>Inspections Table</span>
+            </button>
+
+            <button onclick="switchTab('repairs')" id="nav-repairs" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-wrench text-emerald-400 w-4 text-center"></i>
+              <span>Repair Orders</span>
+            </button>
+
+            <button onclick="switchTab('equipment')" id="nav-equipment" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-radiation text-purple-400 w-4 text-center"></i>
+              <span>Central Equipment</span>
+            </button>
+
+            <button onclick="switchTab('itp')" id="nav-itp" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-clipboard-check text-cyan-400 w-4 text-center"></i>
+              <span>ITP Quality Plans</span>
+            </button>
+
+            <button onclick="switchTab('rbi')" id="nav-rbi" class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition">
+              <i class="fa-solid fa-shield-halved text-red-400 w-4 text-center"></i>
+              <span>RBI Hard Stop Safeguards</span>
+            </button>
+          </nav>
+        </div>
+
+      </div>
+
+      <!-- FOOTER STATUS -->
+      <div class="p-3 border-t border-slate-800 text-[11px] text-slate-400 font-mono space-y-1">
+        <div class="flex items-center justify-between">
+          <span>Active Tech:</span>
+          <span id="sidebarTechDisplay" class="text-white font-bold">J. Dev</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>Photos Logged:</span>
+          <span id="sidebarPhotoCount" class="text-sky-400 font-bold">28</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MOBILE BOTTOM NAVIGATION (COMPANYCAM STYLE) -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 z-40 sm:hidden flex justify-around p-2 text-[10px]">
+      <button onclick="switchTab('field-feed')" class="flex flex-col items-center gap-1 text-sky-400 p-1">
+        <i class="fa-solid fa-images text-base"></i>
+        <span>Feed</span>
+      </button>
+      <button onclick="switchTab('projects')" class="flex flex-col items-center gap-1 text-slate-400 p-1">
+        <i class="fa-solid fa-folder-open text-base"></i>
+        <span>Projects</span>
+      </button>
+      <button onclick="openModal('quickCameraModal')" class="flex flex-col items-center gap-1 text-white bg-sky-500 p-2.5 rounded-full -mt-5 shadow-lg shadow-sky-500/40 border-2 border-slate-900">
+        <i class="fa-solid fa-camera text-lg"></i>
+      </button>
+      <button onclick="switchTab('feeder-form')" class="flex flex-col items-center gap-1 text-slate-400 p-1">
+        <i class="fa-solid fa-file-signature text-base"></i>
+        <span>Feeder</span>
+      </button>
+      <button onclick="switchTab('inspections')" class="flex flex-col items-center gap-1 text-slate-400 p-1">
+        <i class="fa-solid fa-database text-base"></i>
+        <span>Tables</span>
+      </button>
+    </nav>
+
+    <!-- MAIN WORKSPACE & TAB CONTENT -->
+    <main class="flex-1 overflow-y-auto bg-slate-950 p-4 sm:p-6 space-y-6">
+
+      <!-- TAB 1: COMPANYCAM STYLE VISUAL FIELD FEED -->
+      <section id="tab-field-feed" class="tab-content space-y-6">
+        
+        <!-- HEADER QUICK METRICS & CONTROLS -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900 border border-slate-800 p-5 rounded-2xl">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-camera-retro text-sky-400"></i> CompanyCam Photo Stream & Visual Timeline
+            </h2>
+            <p class="text-xs text-slate-400">Real-time photos, thickness callouts, and NDT tags synced live from field dispatches.</p>
+          </div>
+
+          <div class="flex items-center gap-2 flex-wrap">
+            <select id="feedProjectFilter" onchange="filterPhotoStream()" class="bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 px-3 py-2 focus:border-sky-500">
+              <option value="ALL">All Active Projects & Job Sites</option>
+              <option value="Shell Refinery Unit 4">Shell Refinery — Unit 4 Piping</option>
+              <option value="Duke Energy Boiler">Duke Energy — Loop B Boiler</option>
+              <option value="Keystone Pipeline Line 14">Keystone Pipeline — Line 14</option>
+            </select>
+
+            <button onclick="openModal('quickCameraModal')" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-sky-600/20">
+              <i class="fa-solid fa-cloud-arrow-up"></i> Upload Photo
+            </button>
+          </div>
+        </div>
+
+        <!-- PHOTO STREAM GRID (COMPANYCAM VISUAL CARDS) -->
+        <div id="companyCamGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <!-- Dynamically populated via JavaScript -->
+        </div>
+      </section>
+
+      <!-- TAB 2: PROJECTS & SITE GALLERIES (COMPANYCAM PROJECT GRID) -->
+      <section id="tab-projects" class="tab-content space-y-6 hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-folder-open text-amber-400"></i> Project & Site Visual Galleries
+            </h2>
+            <p class="text-xs text-slate-400">CompanyCam project cards categorized by job site address, active client, and total photo assets.</p>
+          </div>
+          <button onclick="openModal('newProjectModal')" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-2">
+            <i class="fa-solid fa-plus"></i> New Project Site
+          </button>
+        </div>
+
+        <div id="projectsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Dynamically populated via JS -->
+        </div>
+      </section>
+
+      <!-- TAB 3: API/ASME FIELD FEEDER FORM -->
+      <section id="tab-feeder-form" class="tab-content space-y-6 hidden">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl space-y-6 max-w-4xl mx-auto shadow-2xl">
+          <div class="border-b border-slate-800 pb-4 flex items-center justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-file-signature text-emerald-400"></i> API / ASME Inspection Field Feeder Form
+              </h2>
+              <p class="text-xs text-slate-400">Fill out field findings to automatically assemble a printable customer engineering report.</p>
+            </div>
+            <span class="bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono text-[10px] px-3 py-1 rounded-full uppercase font-bold">Auto-Generates PDF</span>
+          </div>
+
+          <form id="feederForm" onsubmit="handleFeederSubmit(event)" class="space-y-5 text-xs">
+            
+            <!-- SECTION 1: METADATA & API TYPE -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Governing Code / API Standard</label>
+                <select id="feederCode" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 font-mono focus:border-sky-500">
+                  <option value="API 570">API 570 — Piping Inspection Code</option>
+                  <option value="API 510">API 510 — Pressure Vessel Inspection</option>
+                  <option value="API 653">API 653 — Storage Tank Inspection</option>
+                  <option value="ASME VIII">ASME VIII Div 1 — Pressure Vessels</option>
+                  <option value="ASME B31.3">ASME B31.3 — Process Piping</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Inspection Method</label>
+                <select id="feederMethod" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 font-mono focus:border-sky-500">
+                  <option value="UT Shear Wave & Thickness">UT Ultrasonic Shear Wave & Thickness</option>
+                  <option value="RT Radiographic Film">RT Radiographic Film Examination</option>
+                  <option value="MT Magnetic Particle">MT Magnetic Particle Surface Test</option>
+                  <option value="PT Liquid Penetrant">PT Liquid Penetrant Dye Inspection</option>
+                  <option value="VT Visual Inspection">VT Visual & Dimensional Audit</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Customer / Facility Name</label>
+                <input type="text" id="feederClient" placeholder="e.g. Shell Oil Refining Co." required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500">
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Lead Inspector / Tech</label>
+                <input type="text" id="feederInspector" value="Sarah Jenkins (Level III)" required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500">
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Inspection Date & Time</label>
+                <input type="datetime-local" id="feederDateTime" required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500">
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Job Site Location / Unit</label>
+                <input type="text" id="feederLocation" placeholder="e.g. Unit 4 Crude Piping Loop" required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500">
+              </div>
+            </div>
+
+            <!-- SECTION 2: FINDINGS & NARRATIVE -->
+            <div class="space-y-4">
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">What Was Found / Physical Indications</label>
+                <textarea id="feederFindings" rows="2" placeholder="e.g. Localized pitting corrosion detected on lower elbow E-04 seam. Wall thickness measured at 0.185 inches." required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500"></textarea>
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Visual Surface & Inspection Conditions</label>
+                <textarea id="feederConditions" rows="2" placeholder="e.g. Insulation stripped. Surface power tool cleaned to SSPC-SP3. Temperature 72°F." required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500"></textarea>
+              </div>
+
+              <div>
+                <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Executive Summary & Recommendations</label>
+                <textarea id="feederSummary" rows="3" placeholder="e.g. Component fails minimum safety thickness. Immediate weld overlay sleeve repair recommended prior to re-commissioning." required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200 focus:border-sky-500"></textarea>
+              </div>
+            </div>
+
+            <!-- SECTION 3: COMPLIANCE STATUS & SUBMIT -->
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-slate-800 pt-4">
+              <div class="flex items-center gap-3">
+                <label class="text-slate-300 font-bold">Overall Status:</label>
+                <select id="feederStatus" class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 font-mono text-xs text-white">
+                  <option value="ACCEPTED">ACCEPTED (Passes Code Specs)</option>
+                  <option value="MONITOR">MONITOR (Minor Erosion)</option>
+                  <option value="REJECTED">REJECTED (Critical Non-Conformance)</option>
+                </select>
+              </div>
+
+              <button type="submit" class="bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs px-6 py-3 rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-2 w-full sm:w-auto justify-center">
+                <i class="fa-solid fa-file-export"></i> Generate Customer Deliverable Report
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- TAB 4: PRINTABLE CUSTOMER REPORT DELIVERABLE -->
+      <section id="tab-report-preview" class="tab-content space-y-6 hidden">
+        
+        <!-- PRINT CONTROLS HEADER -->
+        <div class="flex items-center justify-between bg-slate-900 border border-slate-800 p-4 rounded-2xl no-print">
+          <div>
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-file-pdf text-purple-400"></i> Customer Deliverable Inspection Document
+            </h2>
+            <p class="text-xs text-slate-400">Official NDTechnologies engineering report ready to print or email to client.</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button onclick="window.print()" class="bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-lg shadow-purple-600/20">
+              <i class="fa-solid fa-print"></i> Print / Save PDF
+            </button>
+          </div>
+        </div>
+
+        <!-- PRINTABLE REPORT DOCUMENT CONTAINER -->
+        <div id="printableReportArea" class="bg-white text-slate-900 p-8 rounded-2xl max-w-4xl mx-auto shadow-2xl space-y-6 text-xs font-sans border border-slate-300">
+          
+          <!-- REPORT HEADER BANNER -->
+          <div class="flex items-start justify-between border-b-2 border-slate-900 pb-4">
+            <div>
+              <h1 class="text-2xl font-black text-slate-900 tracking-tight uppercase">NDTECHNOLOGIES</h1>
+              <p class="text-xs font-bold text-sky-700 uppercase tracking-widest">Non-Destructive Testing & Field Quality Assurance</p>
+              <p class="text-[10px] text-slate-500 mt-1">Certified ASNT / SNT-TC-1A Inspection Services</p>
+            </div>
+            <div class="text-right">
+              <span class="inline-block bg-slate-900 text-white font-mono text-[10px] font-bold px-3 py-1 rounded">OFFICIAL REPORT</span>
+              <p class="text-[11px] font-mono text-slate-600 mt-1" id="rptSerialNo">NDT-RPT-2026-8841</p>
+              <p class="text-[10px] text-slate-500" id="rptPrintedDate">Issued: Oct 28, 2026</p>
+            </div>
+          </div>
+
+          <!-- CLIENT & SITE SUMMARY GRID -->
+          <div class="grid grid-cols-2 bg-slate-100 p-4 rounded-xl gap-4 border border-slate-300">
+            <div class="space-y-1">
+              <p><strong class="text-slate-600 uppercase text-[10px] font-mono">Client:</strong> <span id="rptClient" class="font-bold text-slate-900">Shell Oil Refining Co.</span></p>
+              <p><strong class="text-slate-600 uppercase text-[10px] font-mono">Location:</strong> <span id="rptLocation" class="text-slate-800">Unit 4 Crude Piping Loop</span></p>
+              <p><strong class="text-slate-600 uppercase text-[10px] font-mono">Governing Code:</strong> <span id="rptCode" class="font-mono font-bold text-sky-800">API 570</span></p>
+            </div>
+            <div class="space-y-1">
+              <p><strong class="text-slate-600 uppercase text-[10px] font-mono">Lead Inspector:</strong> <span id="rptInspector" class="font-bold text-slate-900">Sarah Jenkins (Level III)</span></p>
+              <p><strong class="text-slate-600 uppercase text-[10px] font-mono">Date / Time:</strong> <span id="rptDateTime" class="text-slate-800">2026-10-28 09:30 AM</span></p>
+              <p><strong class="text-slate-600 uppercase text-[10px] font-mono">Method:</strong> <span id="rptMethod" class="font-mono font-bold text-slate-800">UT Ultrasonic Shear Wave</span></p>
+            </div>
+          </div>
+
+          <!-- FINDINGS & CONDITIONS -->
+          <div class="space-y-4">
+            <div>
+              <h3 class="font-bold text-slate-900 uppercase text-[11px] border-b border-slate-300 pb-1">1. Inspection Findings & Defect Indications</h3>
+              <p id="rptFindings" class="text-slate-700 leading-relaxed mt-2 bg-slate-50 p-3 rounded border border-slate-200">
+                Localized pitting corrosion detected on lower elbow E-04 seam. Ultrasonic thickness measured at 0.185 inches against minimum safe required thickness ($t_{min}$) of 0.220 inches.
+              </p>
+            </div>
+
+            <div>
+              <h3 class="font-bold text-slate-900 uppercase text-[11px] border-b border-slate-300 pb-1">2. Visual & Environmental Conditions</h3>
+              <p id="rptConditions" class="text-slate-700 leading-relaxed mt-2 bg-slate-50 p-3 rounded border border-slate-200">
+                Insulation stripped. Surface power tool cleaned to SSPC-SP3 standard. Surface temperature 72°F.
+              </p>
+            </div>
+
+            <div>
+              <h3 class="font-bold text-slate-900 uppercase text-[11px] border-b border-slate-300 pb-1">3. Executive Summary & Action Requirements</h3>
+              <p id="rptSummary" class="text-slate-700 leading-relaxed mt-2 bg-slate-50 p-3 rounded border border-slate-200 font-medium">
+                Component fails minimum safety wall thickness. Non-conformance repair order issued. Full enclosure sleeve or weld overlay required prior to re-pressurization.
+              </p>
+            </div>
+          </div>
+
+          <!-- SIGN-OFF BLOCK -->
+          <div class="border-t-2 border-slate-900 pt-4 flex justify-between items-end">
+            <div>
+              <p class="font-bold text-slate-900">Certified NDT Inspector Sign-off:</p>
+              <div class="font-mono text-[11px] text-sky-800 mt-2 font-bold">[ELECTRONICALLY SIGNED BY SARAH JENKINS - LEVEL III]</div>
+            </div>
+            <div class="text-right">
+              <span id="rptStatusBadge" class="bg-red-600 text-white font-mono font-black text-xs px-3 py-1.5 rounded uppercase">REJECTED</span>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- DATABASE TABLES & SAFEGUARDS (TAB 5 - TAB 9 RETAINED) -->
+      <section id="tab-inspections" class="tab-content space-y-6 hidden">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h2 class="text-lg font-bold text-white flex items-center gap-2"><i class="fa-solid fa-microscope text-blue-400"></i> Inspections Master Table</h2>
+          <button onclick="openModal('quickCameraModal')" class="bg-sky-600 hover:bg-sky-500 text-white text-xs px-3 py-2 rounded-xl font-bold">+ Log Inspection</button>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] font-mono border-b border-slate-800">
+              <tr>
+                <th class="p-3">ID</th>
+                <th class="p-3">Project / Job</th>
+                <th class="p-3">Asset Tag</th>
+                <th class="p-3">Method</th>
+                <th class="p-3">Thickness</th>
+                <th class="p-3">Inspector</th>
+                <th class="p-3">Evaluation</th>
+              </tr>
+            </thead>
+            <tbody id="inspectionsTableBody" class="divide-y divide-slate-800/60 font-sans">
+              <!-- JS Injected -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 6: REPAIRS -->
+      <section id="tab-repairs" class="tab-content space-y-6 hidden">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3"><i class="fa-solid fa-wrench text-emerald-400"></i> Non-Conformance Repair Orders</h2>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] font-mono border-b border-slate-800">
+              <tr>
+                <th class="p-3">Repair ID</th>
+                <th class="p-3">Ref Insp</th>
+                <th class="p-3">Asset Tag</th>
+                <th class="p-3">Action Type</th>
+                <th class="p-3">WPS Standard</th>
+                <th class="p-3">Status</th>
+              </tr>
+            </thead>
+            <tbody id="repairsTableBody" class="divide-y divide-slate-800/60 font-sans">
+              <!-- JS Injected -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 7: EQUIPMENT -->
+      <section id="tab-equipment" class="tab-content space-y-6 hidden">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3"><i class="fa-solid fa-radiation text-purple-400"></i> Central Statistical Equipment Registry</h2>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] font-mono border-b border-slate-800">
+              <tr>
+                <th class="p-3">Serial #</th>
+                <th class="p-3">Name</th>
+                <th class="p-3">Type</th>
+                <th class="p-3">Calib Due</th>
+                <th class="p-3">Status</th>
+              </tr>
+            </thead>
+            <tbody id="equipmentTableBody" class="divide-y divide-slate-800/60 font-sans">
+              <!-- JS Injected -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 8: ITP -->
+      <section id="tab-itp" class="tab-content space-y-6 hidden">
+        <h2 class="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3"><i class="fa-solid fa-clipboard-check text-cyan-400"></i> Inspection Test Plan (ITP)</h2>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] font-mono border-b border-slate-800">
+              <tr>
+                <th class="p-3">Step</th>
+                <th class="p-3">Task</th>
+                <th class="p-3">Code</th>
+                <th class="p-3">Point Type</th>
+                <th class="p-3">Inspector Sign-off</th>
+              </tr>
+            </thead>
+            <tbody id="itpTableBody" class="divide-y divide-slate-800/60 font-sans">
+              <!-- JS Injected -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- TAB 9: RBI HARD STOP ENGINE -->
+      <section id="tab-rbi" class="tab-content space-y-6 hidden">
+        <div class="bg-red-950/80 border-2 border-red-500 p-5 rounded-2xl space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-base font-black text-white uppercase tracking-wider">API 580/581 Risk-Based Inspection Safeguard</h3>
+            <span class="bg-red-600 text-white font-mono text-xs px-2.5 py-1 rounded font-bold uppercase">Meta Score: 5E (Critical)</span>
+          </div>
+          <p class="text-xs text-red-200">
+            Calculated wall degradation triggers a hard stop. Asset PIPE-S-204 thickness measured at 0.185" (below 0.220" threshold).
+          </p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MODAL: COMPANYCAM QUICK SNAP PHOTO -->
+  <div id="quickCameraModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-camera text-sky-400"></i> Field Photo Attachment
+        </h3>
+        <button onclick="closeModal('quickCameraModal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form id="quickPhotoForm" onsubmit="handleQuickPhotoUpload(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Project Site</label>
+          <select id="camProjectSelect" required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200">
+            <option value="Shell Refinery Unit 4">Shell Refinery — Unit 4 Piping</option>
+            <option value="Duke Energy Boiler">Duke Energy — Loop B Boiler</option>
+            <option value="Keystone Pipeline Line 14">Keystone Pipeline — Line 14</option>
+          </select>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Asset Tag</label>
+            <input type="text" id="camAssetTag" placeholder="e.g. PIPE-S-204" required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200">
+          </div>
+          <div>
+            <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Method Tag</label>
+            <select id="camMethodTag" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200">
+              <option value="UT">UT Ultrasonic</option>
+              <option value="RT">RT Radiography</option>
+              <option value="MT">MT Mag Particle</option>
+              <option value="PT">PT Penetrant</option>
+              <option value="VT">VT Visual</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Flaw Status</label>
+          <select id="camStatusTag" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200">
+            <option value="PASS">PASSED / Acceptable Component</option>
+            <option value="MONITOR">MONITOR / Watch Indication</option>
+            <option value="REJECT">REJECTED / Defect Deficit</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 font-mono text-[10px] uppercase mb-1">Photo Description & Thickness Callout</label>
+          <textarea id="camNotes" rows="2" placeholder="Describe indication or measured thickness..." required class="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-slate-200"></textarea>
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" onclick="closeModal('quickCameraModal')" class="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl">Cancel</button>
+          <button type="submit" class="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-bold">Post to Stream</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- JAVASCRIPT LOGIC ENGINE -->
+  <script>
+    const appState = {
+      currentUser: { name: "Sarah Jenkins", role: "TECH", title: "Field Inspector Level II" },
+      projects: [
+        { id: "PRJ-1", name: "Shell Refinery Unit 4", address: "Deer Park, TX", photosCount: 14, status: "Active Site", client: "Shell Oil" },
+        { id: "PRJ-2", name: "Duke Energy Boiler", address: "Charlotte, NC", photosCount: 8, status: "Active Site", client: "Duke Power" },
+        { id: "PRJ-3", name: "Keystone Pipeline Line 14", address: "Cushing, OK", photosCount: 6, status: "Audit Pending", client: "TC Energy" }
+      ],
+      camFeed: [
+        { id: "CAM-1", project: "Shell Refinery Unit 4", assetTag: "PIPE-S-204", method: "UT", status: "REJECT", tech: "J. Dev", time: "10m ago", notes: "Severe wall loss detected on elbow E-04. Reading 0.185 inches.", svg: `<rect width="100%" height="100%" fill="#0f172a"/><circle cx="50%" cy="50%" r="35" stroke="#ef4444" stroke-width="6" fill="none"/><text x="50%" y="54%" text-anchor="middle" fill="#ef4444" font-size="12" font-family="monospace">0.185" MIN</text>` },
+        { id: "CAM-2", project: "Shell Refinery Unit 4", assetTag: "TANK-T-102", method: "UT", status: "PASS", tech: "S. Jenkins", time: "1h ago", notes: "Grid scan complete on bottom plate 3. Nominal thickness 0.440 inches.", svg: `<rect width="100%" height="100%" fill="#0f172a"/><rect x="25%" y="25%" width="50%" height="50%" stroke="#10b981" stroke-width="4" fill="none"/><text x="50%" y="54%" text-anchor="middle" fill="#10b981" font-size="12" font-family="monospace">0.440" NOM</text>` },
+        { id: "CAM-3", project: "Duke Energy Boiler", assetTag: "BOILER-B-01", method: "RT", status: "PASS", tech: "M. Vance", time: "3h ago", notes: "Radiograph of circumferential seam weld W-01. No porosity indications.", svg: `<rect width="100%" height="100%" fill="#1e293b"/><line x1="10" y1="60" x2="290" y2="60" stroke="#38bdf8" stroke-width="12"/><text x="50%" y="54%" text-anchor="middle" fill="#38bdf8" font-size="12" font-family="monospace">RT FILM CLEAR</text>` }
+      ],
+      inspections: [
+        { id: "INS-901", project: "Shell Refinery Unit 4", assetTag: "PIPE-S-204", method: "UT", tech: "James Dev", thickness: "0.185", evaluation: "REJECT" },
+        { id: "INS-902", project: "Shell Refinery Unit 4", assetTag: "TANK-T-102", method: "UT", tech: "Sarah Jenkins", thickness: "0.440", evaluation: "PASS" }
+      ],
+      repairs: [
+        { id: "REP-401", refInsp: "INS-901", assetTag: "PIPE-S-204", action: "360-Degree Sleeve", wps: "WPS-B31.3-04", status: "PENDING_WELD" }
+      ],
+      equipment: [
+        { id: "EQ-101", name: "Olympus Epoch 650 UT Gauge", type: "Ultrasonic Flaw Detector", calibDate: "2027-01-15", status: "Active / Calibrated" }
+      ]
+    };
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active', 'bg-slate-800', 'text-white'));
+
+      const targetTab = document.getElementById(`tab-${tabId}`);
+      const targetNav = document.getElementById(`nav-${tabId}`);
+
+      if (targetTab) targetTab.classList.remove('hidden');
+      if (targetNav) targetNav.classList.add('active', 'bg-slate-800', 'text-white');
+    }
+
+    function renderCompanyCamFeed() {
+      const grid = document.getElementById('companyCamGrid');
+      if (!grid) return;
+
+      const selectedProject = document.getElementById('feedProjectFilter')?.value || 'ALL';
+      const items = selectedProject === 'ALL' ? appState.camFeed : appState.camFeed.filter(x => x.project === selectedProject);
+
+      grid.innerHTML = items.map(item => {
+        const badgeColor = item.status === 'REJECT' ? 'bg-red-950 text-red-400 border-red-800' : (item.status === 'MONITOR' ? 'bg-amber-950 text-amber-400 border-amber-800' : 'bg-emerald-950 text-emerald-400 border-emerald-800');
+        return `
+          <div class="companycam-card bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+            <div class="h-44 bg-slate-950 relative flex items-center justify-center p-2">
+              <svg class="w-full h-full rounded-xl" viewBox="0 0 300 160">${item.svg}</svg>
+              <span class="absolute top-3 left-3 bg-slate-900/90 font-mono text-[10px] text-sky-400 px-2.5 py-0.5 rounded-full border border-slate-800">${item.method}</span>
+              <span class="absolute top-3 right-3 border text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase font-mono ${badgeColor}">${item.status}</span>
+            </div>
+            <div class="p-4 space-y-2 flex-1 flex flex-col justify-between">
+              <div>
+                <div class="flex justify-between font-mono text-[10px] text-slate-400">
+                  <span>${item.project}</span>
+                  <span>${item.time}</span>
+                </div>
+                <h4 class="font-bold text-white text-sm mt-1">${item.assetTag}</h4>
+                <p class="text-xs text-slate-400 mt-1 line-clamp-2">${item.notes}</p>
+              </div>
+              <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Inspector: <strong class="text-slate-300">${item.tech}</strong></span>
+                <i class="fa-solid fa-camera text-sky-400"></i>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderProjectsGrid() {
+      const grid = document.getElementById('projectsGrid');
+      if (!grid) return;
+
+      grid.innerHTML = appState.projects.map(prj => `
+        <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl space-y-4 hover:border-sky-500/50 transition">
+          <div class="flex items-start justify-between">
+            <div>
+              <h3 class="font-bold text-white text-base">${prj.name}</h3>
+              <p class="text-xs text-slate-400"><i class="fa-solid fa-location-dot text-sky-400 mr-1"></i>${prj.address}</p>
+            </div>
+            <span class="bg-sky-950 text-sky-400 border border-sky-800 text-[10px] font-mono px-2.5 py-0.5 rounded-full">${prj.status}</span>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs bg-slate-950 p-3 rounded-xl border border-slate-800">
+            <div>
+              <span class="text-slate-500 block text-[10px]">Client:</span>
+              <span class="font-bold text-slate-200">${prj.client}</span>
+            </div>
+            <div>
+              <span class="text-slate-500 block text-[10px]">Photos Streamed:</span>
+              <span class="font-bold text-sky-400 font-mono">${prj.photosCount} Photos</span>
+            </div>
+          </div>
+
+          <button onclick="switchTab('field-feed')" class="w-full bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-bold py-2 rounded-xl border border-slate-700 flex items-center justify-center gap-2">
+            <i class="fa-solid fa-images"></i> Open Photo Stream
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function renderTables() {
+      const inspBody = document.getElementById('inspectionsTableBody');
+      if (inspBody) {
+        inspBody.innerHTML = appState.inspections.map(item => `
+          <tr>
+            <td class="p-3 font-mono text-sky-400">${item.id}</td>
+            <td class="p-3">${item.project}</td>
+            <td class="p-3 font-bold text-white">${item.assetTag}</td>
+            <td class="p-3 font-mono">${item.method}</td>
+            <td class="p-3 font-mono font-bold">${item.thickness} in</td>
+            <td class="p-3">${item.tech}</td>
+            <td class="p-3"><span class="bg-red-950 text-red-400 border border-red-800 text-[10px] px-2 py-0.5 rounded font-mono font-bold">${item.evaluation}</span></td>
+          </tr>
+        `).join('');
+      }
+
+      const repBody = document.getElementById('repairsTableBody');
+      if (repBody) {
+        repBody.innerHTML = appState.repairs.map(item => `
+          <tr>
+            <td class="p-3 font-mono text-emerald-400">${item.id}</td>
+            <td class="p-3 font-mono text-slate-400">${item.refInsp}</td>
+            <td class="p-3 font-bold text-white">${item.assetTag}</td>
+            <td class="p-3">${item.action}</td>
+            <td class="p-3 font-mono text-sky-400">${item.wps}</td>
+            <td class="p-3"><span class="bg-amber-950 text-amber-400 border border-amber-800 text-[10px] px-2 py-0.5 rounded font-mono">${item.status}</span></td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    function handleFeederSubmit(e) {
+      e.preventDefault();
+      document.getElementById('rptClient').innerText = document.getElementById('feederClient').value;
+      document.getElementById('rptLocation').innerText = document.getElementById('feederLocation').value;
+      document.getElementById('rptCode').innerText = document.getElementById('feederCode').value;
+      document.getElementById('rptInspector').innerText = document.getElementById('feederInspector').value;
+      document.getElementById('rptMethod').innerText = document.getElementById('feederMethod').value;
+      document.getElementById('rptFindings').innerText = document.getElementById('feederFindings').value;
+      document.getElementById('rptConditions').innerText = document.getElementById('feederConditions').value;
+      document.getElementById('rptSummary').innerText = document.getElementById('feederSummary').value;
+
+      const status = document.getElementById('feederStatus').value;
+      const statusBadge = document.getElementById('rptStatusBadge');
+      statusBadge.innerText = status;
+      if (status === 'REJECTED') {
+        statusBadge.className = 'bg-red-600 text-white font-mono font-black text-xs px-3 py-1.5 rounded uppercase';
+      } else {
+        statusBadge.className = 'bg-emerald-600 text-white font-mono font-black text-xs px-3 py-1.5 rounded uppercase';
+      }
+
+      switchTab('report-preview');
+    }
+
+    function handleQuickPhotoUpload(e) {
+      e.preventDefault();
+      const project = document.getElementById('camProjectSelect').value;
+      const assetTag = document.getElementById('camAssetTag').value;
+      const method = document.getElementById('camMethodTag').value;
+      const status = document.getElementById('camStatusTag').value;
+      const notes = document.getElementById('camNotes').value;
+
+      appState.camFeed.unshift({
+        id: "CAM-" + (appState.camFeed.length + 1),
+        project, assetTag, method, status, tech: appState.currentUser.name, time: "Just now", notes,
+        svg: `<rect width="100%" height="100%" fill="#0f172a"/><circle cx="50%" cy="50%" r="28" stroke="#38bdf8" stroke-width="4" fill="none"/><text x="50%" y="54%" text-anchor="middle" fill="#38bdf8" font-size="10" font-family="monospace">NEW PHOTO</text>`
+      });
+
+      renderCompanyCamFeed();
+      closeModal('quickCameraModal');
+    }
+
+    function openModal(id) { document.getElementById(id)?.classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
+    function filterPhotoStream() { renderCompanyCamFeed(); }
+
+    function changeUserRole(role) {
+      if (role === 'TECH') {
+        appState.currentUser = { name: "James Dev", role: "TECH", title: "Field Inspector Level II" };
+      } else {
+        appState.currentUser = { name: "Sarah Jenkins", role: "QA_MGR", title: "QA Manager Level III" };
+      }
+      document.getElementById('sidebarTechDisplay').innerText = appState.currentUser.name;
+    }
+
+    function dismissBanner() { document.getElementById('globalHardStopBanner')?.classList.add('hidden'); }
+
+    window.onload = function() {
+      renderCompanyCamFeed();
+      renderProjectsGrid();
+      renderTables();
+    }
+  </script>
+</body>
+</html>
